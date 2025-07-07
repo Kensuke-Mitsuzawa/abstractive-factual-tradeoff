@@ -1,4 +1,7 @@
 *.egg-info
+*egg-info/
 *~
 .history
 __pycache__/
+build/
+fairseq/

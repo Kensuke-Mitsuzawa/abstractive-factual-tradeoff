@@ -42,6 +42,24 @@ The repository contains our code and two datasets:
   them to compare the abstractiveness-adjusted factuality of previous
   summarization works, providing baselines for future work.
 
+## Python Environment
+
+
+Recommended Python version `3.9.23`.
+
+```
+conda create -n p39-Dreyer-2023 python=3.9.23
+conda activate p39-Dreyer-2023
+```
+
+Recommended to install necessary packages with `poetry`.
+
+```
+pip install poetry
+poetry install
+```
+
+
 ## MINT Abstractiveness Score
 
 Our paper introduces the MINT score to measure the degree of
@@ -139,6 +157,7 @@ the length of an extractive fragment. In the example command above, we
 use an exponent of `k=2` (see Footnote 3 in our paper) and
 `c=2.402244`. This corresponds to the (negative) log of Equation 1 in
 our paper with `h=2`, see Appendix B.
+
 
 ## Datasets
 
