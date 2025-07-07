@@ -143,6 +143,22 @@ Then, use our `misc/bart_decode.py` script, which takes an
 `--extractive-penalty` as a command line option to control
 abstractiveness:
 
+```
+N_GPUS=2
+PATH_DIR_MODEL=[PATH DIR OF DART MODEL]
+PATH_OUPUT="output.txt"
+PATH_INPUT="./tests/testresources/xsum/test_source.txt"
+
+python ./misc/bart_decode.py \
+ --extractive-penalty 'log_exp(2,2.402244)' \
+  --gpus=${N_GPUS} --batch-size=4 \
+  --min-len=55 --max-len-b=140 \
+  --model=${PATH_DIR_MODEL}/model.pt \
+  --task=${PATH_DIR_MODEL} \
+  --output=${PATH_OUPUT} \
+  ${PATH_INPUT}
+```
+<!-- 
     python ${HOME}/abstractive-factual-tradeoff/misc/bart_decode.py \
       --extractive-penalty 'log_exp(2,2.402244)' \
       --gpus=4 --batch-size=4
@@ -150,7 +166,7 @@ abstractiveness:
       --model=${HOME}/fairseq/models/bart.large.cnn/model.pt \
       --task=${HOME}/fairseq/models/bart.large.cnn \
       --output output.txt \
-      input.txt
+      input.txt -->
 
 The `log_exp(k,c)` stands for the function `x**k/c**k`, where `x` is
 the length of an extractive fragment. In the example command above, we
