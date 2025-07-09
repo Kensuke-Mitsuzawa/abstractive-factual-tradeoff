@@ -115,17 +115,27 @@ We provide a reference implementation of using the
 `abstractive_constraints` library in the
 [Fairseq](https://github.com/facebookresearch/fairseq) decoder.
 
+First, `git clone` the `fairseq` repository. `git clone https://github.com/pytorch/fairseq.git`
+
+Suppose that the directory structure is as below,
+
+
+```
+----
+   |--abstractive-factual-tradeoff/
+   |--fairseq/
+```
+
 To run it, first install Fairseq into a parent directory, then apply
-our diff file `fairseq-1e40a48.diff`, which inserts calls to the
+our diff files, which inserts calls to the
 `abstractive_constraints` library:
 
-    cd ~
-    git clone https://github.com/pytorch/fairseq.git
-    cd fairseq
+    cd <Root Path of fairseq>
     git reset --hard 1e40a48
     pip install --editable ./
-    patch -p0 < ~/abstractive-factual-tradeoff/fairseq-1e40a48.diff # from this repo
-    patch -p0 < ~/abstractive-factual-tradeoff/fairseq-1e40a48-data_language_pair_dataset.patch # from this repo.
+    patch -p0 < ../abstractive-factual-tradeoff/fairseq-1e40a48.diff # from this repo
+    patch -p0 < ../abstractive-factual-tradeoff/fairseq-1e40a48-data_language_pair_dataset.patch # from this repo.
+
 
 You can then run inference with a BART model using abstractiveness
 constraints as follows.

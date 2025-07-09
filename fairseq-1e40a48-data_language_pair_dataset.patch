@@ -1,7 +1,7 @@
-diff --git a/fairseq/data/language_pair_dataset.py b/fairseq/data/language_pair_dataset.py
+diff --git fairseq/data/language_pair_dataset.py b/fairseq/data/language_pair_dataset.py
 index d18a92d7..f2e0a52f 100644
---- a/fairseq/data/language_pair_dataset.py
-+++ b/fairseq/data/language_pair_dataset.py
+--- fairseq/data/language_pair_dataset.py
++++ fairseq/data/language_pair_dataset.py
 @@ -49,11 +49,12 @@ def collate(
          align_weights = align_tgt_c[align_tgt_i[np.arange(len(align_tgt))]]
          return 1. / align_weights.float()
