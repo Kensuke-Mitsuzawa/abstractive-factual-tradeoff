@@ -125,7 +125,7 @@ our diff file `fairseq-1e40a48.diff`, which inserts calls to the
     git reset --hard 1e40a48
     pip install --editable ./
     patch -p0 < ~/abstractive-factual-tradeoff/fairseq-1e40a48.diff # from this repo
-
+    patch -p0 < ~/abstractive-factual-tradeoff/fairseq-1e40a48-data_language_pair_dataset.patch # from this repo.
 
 You can then run inference with a BART model using abstractiveness
 constraints as follows.

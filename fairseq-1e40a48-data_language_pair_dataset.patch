@@ -1,0 +1,18 @@
+diff --git a/fairseq/data/language_pair_dataset.py b/fairseq/data/language_pair_dataset.py
+index d18a92d7..f2e0a52f 100644
+--- a/fairseq/data/language_pair_dataset.py
++++ b/fairseq/data/language_pair_dataset.py
+@@ -49,11 +49,12 @@ def collate(
+         align_weights = align_tgt_c[align_tgt_i[np.arange(len(align_tgt))]]
+         return 1. / align_weights.float()
+ 
+-    id = torch.LongTensor([s['id'] for s in samples])
+     src_tokens = merge('source', left_pad=left_pad_source)
++    id = torch.LongTensor([s['id'] for s in samples]).to(src_tokens.device)    
+     # sort by descending source length
+     src_lengths = torch.LongTensor([s['source'].numel() for s in samples])
+     src_lengths, sort_order = src_lengths.sort(descending=True)
++    sort_order = sort_order.to(src_tokens.device)
+     id = id.index_select(0, sort_order)
+     src_tokens = src_tokens.index_select(0, sort_order)
+ 
