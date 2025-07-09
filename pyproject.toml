@@ -4,7 +4,10 @@ version = "0.1"
 description = ""
 authors = ["Kensuke-Mitsuzawa <kensuke.mit@gmail.com>"]
 readme = "README.md"
-package-mode = false
+packages = [
+    {include = "summary_abstractive"}
+]
+
 
 
 [tool.poetry.dependencies]
