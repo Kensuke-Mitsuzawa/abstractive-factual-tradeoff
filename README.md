@@ -44,6 +44,14 @@ The repository contains our code and two datasets:
 
 ## Python Environment
 
+### Setup Overview
+
+1. make a Python interpreter.
+2. install `abstractive_constraints`, see [section](#nonlinear-abstractiveness-constraints)
+3. git clone `fairseq` and apply patches to the fairseq package, [see](#integration-into-fairseq).
+
+
+### Recommended Python Environment Construction
 
 Recommended Python version `3.9.23`.
 
