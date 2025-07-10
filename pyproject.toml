@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "abstractive_constraints"
+name = "summary_abstractive"
 version = "0.1"
 description = ""
 authors = ["Kensuke-Mitsuzawa <kensuke.mit@gmail.com>"]
