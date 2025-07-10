@@ -10,7 +10,7 @@ import fairseq
 from fairseq.models.bart import BARTHubInterface
 from fairseq.models.bart import BARTModel
 
-from summary_abstractive.utils import get_extractive_penalty_fct
+from summary_abstractive.module_model_handler.ver2.utils import get_extractive_penalty_fct
 
 
 logger = logzero.logger

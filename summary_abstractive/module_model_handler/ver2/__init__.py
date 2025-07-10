@@ -1,0 +1,2 @@
+from .module_base import TranslationResultContainer
+from .module_fairseq_handler_word_embeddings import FaiseqTranslationModelHandlerVer2WordEmbeddings
