@@ -1,6 +1,7 @@
 from pathlib import Path
 import tempfile
 import shutil
+import numpy as np
 
 from summary_abstractive.module_model_handler.ver2.module_fairseq_handler_word_embeddings import (
     FaiseqTranslationModelHandlerVer2WordEmbeddings,
@@ -34,6 +35,24 @@ def test_FaiseqTranslationModelHandlerVer2WordEmbeddings_pipeline(resource_path_
         penalty_command=penalty_command
     )
     assert len(seq_res) == 5
+
+    max_len_tensor = max([len(_obj.target_tensor_tokens.numpy()) for _obj in seq_res])
+    # check the variery (confirming random seeds)
+    # L2 distance must be > 0.0 if token-id tensor has the variations.
+    stack_l2_tensor_out = []
+    for _i_ind, _obj_i in enumerate(seq_res):
+        for _j_ind, _obj_j in enumerate(seq_res):
+            if _i_ind == _j_ind:
+                continue
+            # end if
+            _array_pad_i = np.pad(_obj_i.target_tensor_tokens.numpy(), (0, max_len_tensor - len(_obj_i.target_tensor_tokens)))
+            _array_pad_j = np.pad(_obj_j.target_tensor_tokens.numpy(), (0, max_len_tensor - len(_obj_j.target_tensor_tokens)))
+            _l2_ij = sum((_array_pad_i - _array_pad_j) ** 2)
+            stack_l2_tensor_out.append(_l2_ij)
+        # end for
+    # end for
+
+    assert sum(stack_l2_tensor_out) > 0
 
     shutil.rmtree(path_temp_dir)
     

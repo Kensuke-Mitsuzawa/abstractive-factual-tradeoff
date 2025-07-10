@@ -287,7 +287,7 @@ class FaiseqTranslationModelHandlerVer2WordEmbeddings(BaseTranslationModelHandle
             dict_parameters = dict(
                 beam=1,
                 lenpen=length_penalty,
-                sampling=False,
+                sampling=True,
                 min_len=min_len, 
                 max_len_a=max_len_a, 
                 max_len_b=max_len_b,
@@ -349,7 +349,7 @@ class FaiseqTranslationModelHandlerVer2WordEmbeddings(BaseTranslationModelHandle
             seq_output_obj.append(return_obj)
         # end for
 
-        return output_stack
+        return seq_output_obj
     # end def
 
     @staticmethod
@@ -386,6 +386,8 @@ class FaiseqTranslationModelHandlerVer2WordEmbeddings(BaseTranslationModelHandle
             n_max_attempts: The maximum number of attempts to recover the sampling process.
                 When the attemtps exceed this value, the function raises an exception.
         """
+        tensor_source_tokens = tensor_source_tokens.to(torch.int64)
+
         with torch.no_grad():
             output_stack = self._sampling_single_input(
                 source_text=source_text,
