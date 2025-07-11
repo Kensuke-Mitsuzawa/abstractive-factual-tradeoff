@@ -91,128 +91,128 @@ class FaiseqTranslationModelHandlerVer2WordEmbeddings(BaseTranslationModelHandle
     def get_all_possible_layers(self) -> ty.Tuple[ty.List[str], ty.List[str]]:
         return [], [self._get_decoder_word_embedding_layer_name()]
 
-    def _get_decoder_word_embedding_layer_name(self) -> str:
-        return "decoder.word_embedding"
+    # def _get_decoder_word_embedding_layer_name(self) -> str:
+    #     return "decoder.word_embedding"
     
-    def _get_cache_file_name(self, sentene_id: str, is_zlib_compress: bool) -> str:
-        if is_zlib_compress:
-            return f'{sentene_id}.pkl.zlib'
-        else:
-            return f'{sentene_id}.pt'
+    # def _get_cache_file_name(self, sentene_id: str, is_zlib_compress: bool) -> str:
+    #     if is_zlib_compress:
+    #         return f'{sentene_id}.pkl.zlib'
+    #     else:
+    #         return f'{sentene_id}.pt'
 
-    def _generate_cache_file_path(self, 
-                                  sentene_id: str,
-                                  tau_parameter: float,
-                                  n_sampling: ty.Optional[int],
-                                  is_zlib_compress: bool = True
-                                  ) -> Path:
-        _file_name = self._get_cache_file_name(sentene_id, is_zlib_compress=is_zlib_compress)
+    # def _generate_cache_file_path(self, 
+    #                               sentene_id: str,
+    #                               tau_parameter: float,
+    #                               n_sampling: ty.Optional[int],
+    #                               is_zlib_compress: bool = True
+    #                               ) -> Path:
+    #     _file_name = self._get_cache_file_name(sentene_id, is_zlib_compress=is_zlib_compress)
 
-        if n_sampling is None:
-            return self.path_cache_dir / self.__class__.__name__.__str__() / 'beam' / str(tau_parameter) / _file_name
-        else:
-            assert n_sampling is not None
-            return self.path_cache_dir / self.__class__.__name__.__str__() / 'stochastic' / str(tau_parameter) / str(n_sampling) / _file_name
-        # end if
+    #     if n_sampling is None:
+    #         return self.path_cache_dir / self.__class__.__name__.__str__() / 'beam' / str(tau_parameter) / _file_name
+    #     else:
+    #         assert n_sampling is not None
+    #         return self.path_cache_dir / self.__class__.__name__.__str__() / 'stochastic' / str(tau_parameter) / str(n_sampling) / _file_name
+    #     # end if
 
-    def _save_cache(self, 
-                    sentence_id: str,
-                    tau_param: float,
-                    translation_obj: ty.Union[TranslationResultContainer, ty.List[TranslationResultContainer]],
-                    n_sampling: ty.Optional[int]):
-        if self.is_save_convert_float16:
-            # converting float32 object into float16.
-            if isinstance(translation_obj, TranslationResultContainer):
-                translation_obj = translation_obj.convert_embedding_float16()
-            else:
-                translation_obj = [o.convert_embedding_float16() for o in translation_obj]
-            # end if
-        # end if
+    # def _save_cache(self, 
+    #                 sentence_id: str,
+    #                 tau_param: float,
+    #                 translation_obj: ty.Union[TranslationResultContainer, ty.List[TranslationResultContainer]],
+    #                 n_sampling: ty.Optional[int]):
+    #     if self.is_save_convert_float16:
+    #         # converting float32 object into float16.
+    #         if isinstance(translation_obj, TranslationResultContainer):
+    #             translation_obj = translation_obj.convert_embedding_float16()
+    #         else:
+    #             translation_obj = [o.convert_embedding_float16() for o in translation_obj]
+    #         # end if
+    #     # end if
 
-        if isinstance(translation_obj, TranslationResultContainer):
-            _path_file = self._generate_cache_file_path(sentence_id, tau_parameter=tau_param, n_sampling=None, is_zlib_compress=self.is_zlib_compress)
-            _obj = translation_obj._asdict()
-        elif isinstance(translation_obj, list):
-            _path_file = self._generate_cache_file_path(sentence_id, tau_parameter=tau_param, n_sampling=n_sampling, is_zlib_compress=self.is_zlib_compress)
-            _obj = [o._asdict() for o in translation_obj]
-        else:
-            raise TypeError()
-        # end if
+    #     if isinstance(translation_obj, TranslationResultContainer):
+    #         _path_file = self._generate_cache_file_path(sentence_id, tau_parameter=tau_param, n_sampling=None, is_zlib_compress=self.is_zlib_compress)
+    #         _obj = translation_obj._asdict()
+    #     elif isinstance(translation_obj, list):
+    #         _path_file = self._generate_cache_file_path(sentence_id, tau_parameter=tau_param, n_sampling=n_sampling, is_zlib_compress=self.is_zlib_compress)
+    #         _obj = [o._asdict() for o in translation_obj]
+    #     else:
+    #         raise TypeError()
+    #     # end if
             
-        _path_file.parent.mkdir(parents=True, exist_ok=True)
+    #     _path_file.parent.mkdir(parents=True, exist_ok=True)
 
-        if self.is_zlib_compress:
-            pickled_data = pickle.dumps(_obj)
-            compressed_data_zlib = zlib.compress(pickled_data)
-            with open(_path_file, "wb") as f:
-                f.write(compressed_data_zlib)
-            # end with
-        else:
-            torch.save(_obj, _path_file)
-        # end if
+    #     if self.is_zlib_compress:
+    #         pickled_data = pickle.dumps(_obj)
+    #         compressed_data_zlib = zlib.compress(pickled_data)
+    #         with open(_path_file, "wb") as f:
+    #             f.write(compressed_data_zlib)
+    #         # end with
+    #     else:
+    #         torch.save(_obj, _path_file)
+    #     # end if
 
-    def _load_cache(self, 
-                    sentence_id: str,
-                    tau_param: float,
-                    n_sampling: ty.Optional[int]                    
-                    ) -> ty.Optional[ty.Union[TranslationResultContainer, ty.List[TranslationResultContainer]]]:
-        _path_file_zlib = self._generate_cache_file_path(sentence_id, tau_parameter=tau_param, n_sampling=n_sampling, is_zlib_compress=True)
-        _path_file_pt = self._generate_cache_file_path(sentence_id, tau_parameter=tau_param, n_sampling=n_sampling, is_zlib_compress=False)
+    # def _load_cache(self, 
+    #                 sentence_id: str,
+    #                 tau_param: float,
+    #                 n_sampling: ty.Optional[int]                    
+    #                 ) -> ty.Optional[ty.Union[TranslationResultContainer, ty.List[TranslationResultContainer]]]:
+    #     _path_file_zlib = self._generate_cache_file_path(sentence_id, tau_parameter=tau_param, n_sampling=n_sampling, is_zlib_compress=True)
+    #     _path_file_pt = self._generate_cache_file_path(sentence_id, tau_parameter=tau_param, n_sampling=n_sampling, is_zlib_compress=False)
 
-        try:
-            if _path_file_zlib.exists():
-                with _path_file_zlib.open('rb') as f:
-                    obj_saved = pickle.loads(zlib.decompress(f.read()))
-            elif _path_file_pt.exists():
-                obj_saved = torch.load(_path_file_pt)
-            else:
-                return None
-            # end with
-        except (zlib.error, IOError) as e:
-            # the cache file is broken.
-            return None
-        # end if
+    #     try:
+    #         if _path_file_zlib.exists():
+    #             with _path_file_zlib.open('rb') as f:
+    #                 obj_saved = pickle.loads(zlib.decompress(f.read()))
+    #         elif _path_file_pt.exists():
+    #             obj_saved = torch.load(_path_file_pt)
+    #         else:
+    #             return None
+    #         # end with
+    #     except (zlib.error, IOError) as e:
+    #         # the cache file is broken.
+    #         return None
+    #     # end if
         
-        if isinstance(obj_saved, list):
-            obj_cache = [TranslationResultContainer(**o) for o in obj_saved]
-        else:
-            obj_cache = TranslationResultContainer(**obj_saved)
-        # end if
-        return obj_cache
+    #     if isinstance(obj_saved, list):
+    #         obj_cache = [TranslationResultContainer(**o) for o in obj_saved]
+    #     else:
+    #         obj_cache = TranslationResultContainer(**obj_saved)
+    #     # end if
+    #     return obj_cache
     
-    def _is_exist_cache(self, 
-                        sentence_id: str,
-                        tau_param: float,
-                        n_sampling: ty.Optional[int]) -> ty.Optional[Path]:
-        _path_file = self._generate_cache_file_path(sentence_id, tau_parameter=tau_param, n_sampling=n_sampling, is_zlib_compress=True)
-        if _path_file.exists():
-            return _path_file
-        # end if
-        _path_file = self._generate_cache_file_path(sentence_id, tau_parameter=tau_param, n_sampling=n_sampling, is_zlib_compress=False)
-        if _path_file.exists():
-            return _path_file
-        # end if
-        #
-        return None        
+    # def _is_exist_cache(self, 
+    #                     sentence_id: str,
+    #                     tau_param: float,
+    #                     n_sampling: ty.Optional[int]) -> ty.Optional[Path]:
+    #     _path_file = self._generate_cache_file_path(sentence_id, tau_parameter=tau_param, n_sampling=n_sampling, is_zlib_compress=True)
+    #     if _path_file.exists():
+    #         return _path_file
+    #     # end if
+    #     _path_file = self._generate_cache_file_path(sentence_id, tau_parameter=tau_param, n_sampling=n_sampling, is_zlib_compress=False)
+    #     if _path_file.exists():
+    #         return _path_file
+    #     # end if
+    #     #
+    #     return None        
 
-    def _is_exist_cache_or_fetch(self, 
-                                 sentence_id: str,
-                                 tau_param: float,
-                                 n_sampling: ty.Optional[int]
-                                 ) -> ty.Union[bool, TranslationResultContainer, ty.List[TranslationResultContainer]]:
-        _path_file = self._is_exist_cache(sentence_id, tau_param=tau_param, n_sampling=n_sampling)
-        if _path_file is None:
-            return False
-        # end if
+    # def _is_exist_cache_or_fetch(self, 
+    #                              sentence_id: str,
+    #                              tau_param: float,
+    #                              n_sampling: ty.Optional[int]
+    #                              ) -> ty.Union[bool, TranslationResultContainer, ty.List[TranslationResultContainer]]:
+    #     _path_file = self._is_exist_cache(sentence_id, tau_param=tau_param, n_sampling=n_sampling)
+    #     if _path_file is None:
+    #         return False
+    #     # end if
         
-        if _path_file.exists():
-            _obj = self._load_cache(sentence_id, tau_param=tau_param, n_sampling=n_sampling)
-            if _obj is None:
-                return False
-            else:
-                return _obj
-        else:
-            return False
+    #     if _path_file.exists():
+    #         _obj = self._load_cache(sentence_id, tau_param=tau_param, n_sampling=n_sampling)
+    #         if _obj is None:
+    #             return False
+    #         else:
+    #             return _obj
+    #     else:
+    #         return False
 
     # ------------------------------
     # Sampling
@@ -560,6 +560,7 @@ class FaiseqTranslationModelHandlerVer2WordEmbeddings(BaseTranslationModelHandle
                 tau_param=temperature,
                 n_sampling=n_sampling)
             if isinstance(exists_or_cache, list):
+                module_logger.debug(f"Cache found for id={input_text.sentence_id} and tau={temperature} and n-sample={n_sampling}")
                 return exists_or_cache
             # end if        
 
