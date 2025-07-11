@@ -3,18 +3,18 @@ from pathlib import Path
 import typing as ty
 import random
 
+from summary_abstractive.module_model_handler.ver2 import module_statics
+from summary_abstractive.module_model_handler.ver2 import utils
+
 from summary_abstractive.module_model_handler.ver2 import (
-    FaiseqTranslationModelHandlerVer2WordEmbeddings, 
     TranslationResultContainer,
-    EvaluationTargetTranslationPair)
+    EvaluationTargetTranslationPair,
+    FaiseqTranslationModelHandlerVer2WordEmbeddings)
+from summary_abstractive.module_model_handler.ver2.module_obtain_word_embedding import obtain_word_embedding
 
 import json
 import numpy as np
 
-
-# %%
-PATH_MODEL_BART_CNN = Path("/workdir/kmitsuzawa/Project/neurips-2025/ConstraintsFact-Dreyer-2023/abstractive-factual-tradeoff/tests/testresources/models/bart.large.cnn")
-assert PATH_MODEL_BART_CNN.exists()
 
 # %%
 PATH_DATASET_CNN = Path("/workdir/kmitsuzawa/Project/neurips-2025/ConstraintsFact-Dreyer-2023/abstractive-factual-tradeoff/tests/testresources/datasets/constraints_fact_v1.0/cnn_dailymail/collect.json")
@@ -24,16 +24,23 @@ assert PATH_DATASET_CNN.exists()
 PATH_CACHE_DIR_BASE = Path("/workdir/kmitsuzawa/DATA/mitsuzaw/project_UCA/MT_MMD/flagging_dreyer_2023/summary_cache")
 assert PATH_CACHE_DIR_BASE.exists()
 
-# %%
-summary_model_handler = FaiseqTranslationModelHandlerVer2WordEmbeddings(
-    path_cache_dir=PATH_CACHE_DIR_BASE,
-    path_dir_fairseq_model=PATH_MODEL_BART_CNN
-)
 
 # %%
 with PATH_DATASET_CNN.open('r') as f:
     seq_dataset_obj = [json.loads(_line) for _line in f.readlines()]
 # end with
+
+
+# %% loading the handler. note: I do not use the handler. But, the handler easily loads the model file.
+
+PATH_MODEL_BART_CNN = Path("/workdir/kmitsuzawa/Project/neurips-2025/ConstraintsFact-Dreyer-2023/abstractive-factual-tradeoff/tests/testresources/models/bart.large.cnn")
+assert PATH_MODEL_BART_CNN.exists()
+
+summary_model_handler = FaiseqTranslationModelHandlerVer2WordEmbeddings(
+    path_cache_dir=PATH_CACHE_DIR_BASE,
+    path_dir_fairseq_model=PATH_MODEL_BART_CNN
+)
+
 
 # %%
 import logging
@@ -41,7 +48,7 @@ import logging
 from summary_abstractive import logger_module
 from datetime import datetime
 
-path_log_dir = Path("/workdir/kmitsuzawa/DATA/mitsuzaw/project_UCA/MT_MMD/flagging_dreyer_2023/Dreyer_2023-constraints_fact_CNN-2025-07-10/generations") / f'{datetime.now().isoformat()}.log'
+path_log_dir = Path("/workdir/kmitsuzawa/DATA/mitsuzaw/project_UCA/MT_MMD/flagging_dreyer_2023/Dreyer_2023-constraints_fact_CNN-2025-07-10/generations") / f'{__file__}_{datetime.now().isoformat()}.log'
 
 logger = logging.getLogger('main')
 logger.setLevel(logging.DEBUG)
@@ -131,22 +138,48 @@ for _unique_id, _obj in dict_unique_id2records.items():
 
     _document_full: str = _obj['document_full']
     _document_original: str = _obj['document_original']
+    _summary_raw: str = _obj['summary_raw']
     
     _penalty_command: str = _obj['abstractiveness_constraint']
     
     assert _document_full == _document_original
 
-    _input_record = EvaluationTargetTranslationPair(sentence_id=_document_unique_id, source=_document_full, target="")
+    # _input_record = EvaluationTargetTranslationPair(sentence_id=_document_unique_id, source=_document_full, target="")
 
     logger.info('=' * 30)
     logger.info(f"document-id = {_document_unique_id}")
-    for _tau in tau_parameters:
-        summary_model_handler.translate_sample_multiple_times(
-            input_text=_input_record,
-            n_sampling=n_sampling,
-            temperature=_tau,
-            penalty_command=_penalty_command
-        )
-        logger.info(f"done tau={_tau}")
 
+    # tokenizing
+    _tensor_token_ids_document_source = summary_model_handler.bart_model.encode(_document_full)
+    _tensor_token_ids_summary = summary_model_handler.bart_model.encode(_summary_raw)
 
+    _tensor_beam_word_embedding = obtain_word_embedding(summary_model_handler.bart_model, _tensor_token_ids_summary)
+
+    extractive_penalty_fct: str = utils.get_extractive_penalty_fct(_unique_id.abstractiveness_constraint)
+    
+    argument_translation_conditions= dict(
+        beam=module_statics.BEAM,
+        min_len = module_statics.MIN_LEN,
+        max_len_a = module_statics.MAX_LEN_A,
+        max_len_b = module_statics.MAX_LEN_B,
+        length_penalty = module_statics.LENPEN,
+        no_repeat_ngram_size = module_statics.NO_REPEAT_NGRAM_SIZE,
+        extractive_penalty_fct=extractive_penalty_fct
+    )
+    _generation_obj_container = TranslationResultContainer(
+        source_text=_document_full,
+        translation_text=_summary_raw,
+        source_language='source',
+        target_language='target',
+        source_tensor_tokens=_tensor_token_ids_document_source.cpu(),
+        target_tensor_tokens=_tensor_token_ids_summary.cpu(),
+        log_probability_score=None,
+        dict_layer_embeddings={summary_model_handler._get_decoder_word_embedding_layer_name(): _tensor_beam_word_embedding.cpu()},
+        argument_translation_conditions=argument_translation_conditions
+    )
+
+    summary_model_handler._save_cache(
+        sentence_id=_document_unique_id, 
+        tau_param=1.0,
+        translation_obj=_generation_obj_container,
+        n_sampling=None)
