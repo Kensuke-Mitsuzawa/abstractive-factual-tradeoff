@@ -69,9 +69,20 @@ logger.info(f'Current Git Commit: {sha}')
 n_sampling = 25
 tau_parameters = [float(f'{_tau:.1f}') for _tau in np.arange(0.1, 1.0, 0.1)]
 
+
+# %%
+# inspecting the annotation label.
+seq_document_id_hallucination = [_obj["document_id"] for _obj in seq_dataset_obj if sum(_obj["annotator_votes"]) == 0]
+logger.info(f"Hallucination record -> {len(seq_document_id_hallucination)}")
+
+
 # %%
 for _obj in seq_dataset_obj:
     _document_id: str = str(_obj['document_id'])
+
+    if _document_id not in seq_document_id_hallucination:
+        continue
+    # end if
 
     _document_full: str = _obj['document_full']
     _document_original: str = _obj['document_original']
