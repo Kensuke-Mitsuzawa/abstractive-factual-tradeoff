@@ -288,6 +288,7 @@ class FaiseqTranslationModelHandlerVer2WordEmbeddings(BaseTranslationModelHandle
                 beam=1,
                 lenpen=length_penalty,
                 sampling=True,
+                temperature=temperature,
                 min_len=min_len, 
                 max_len_a=max_len_a, 
                 max_len_b=max_len_b,
@@ -490,7 +491,8 @@ class FaiseqTranslationModelHandlerVer2WordEmbeddings(BaseTranslationModelHandle
             max_len_a=max_len_a, 
             max_len_b=max_len_b,
             no_repeat_ngram_size=no_repeat_ngram_size,
-            extractive_penalty_fct=extractive_penalty_fct)
+            extractive_penalty_fct=extractive_penalty_fct,
+            temperature=temperature)
 
 
         tensor_source_tokens = self.bart_model.encode(source_text)

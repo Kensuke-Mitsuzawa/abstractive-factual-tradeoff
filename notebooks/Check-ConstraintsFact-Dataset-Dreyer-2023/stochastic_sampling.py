@@ -253,6 +253,59 @@ path_resources = Path('/workdir/kmitsuzawa/Project/neurips-2025/ConstraintsFact-
 
 
 # %%
+# Test: the token sequence will change as tau parameter goes larger.
+document_input = 'He\'s a blue chip college basketball recruit. She\'s a high school freshman with Down syndrome. At first glance Trey Moses and Ellie Meredith couldn\'t be more different. But all that changed Thursday when Trey asked Ellie to be his prom date. Trey -- a star on Eastern High School\'s basketball team in Louisville, Kentucky, who\'s headed to play college ball next year at Ball State -- was originally going to take his girlfriend to Eastern\'s prom. So why is he taking Ellie instead? "She\'s great... she listens and she\'s easy to talk to" he said. Trey made the prom-posal (yes, that\'s what they are calling invites to prom these days) in the gym during Ellie\'s P.E. class. Trina Helson, a teacher at Eastern, alerted the school\'s newspaper staff to the prom-posal and posted photos of Trey and Ellie on Twitter that have gone viral. She wasn\'t surpristed by Trey\'s actions. "That\'s the kind of person Trey is," she said. To help make sure she said yes, Trey entered the gym armed with flowers and a poster that read "Let\'s Party Like it\'s 1989," a reference to the latest album by Taylor Swift, Ellie\'s favorite singer. Trey also got the OK from Ellie\'s parents the night before via text. They were thrilled. "You just feel numb to those moments raising a special needs child,"  said Darla Meredith, Ellie\'s mom. "You first feel the need to protect and then to overprotect." Darla Meredith said Ellie has struggled with friendships since elementary school, but a special program at Eastern called Best Buddies had made things easier for her. She said Best Buddies cultivates friendships between students with and without developmental disabilities and prevents students like Ellie from feeling isolated and left out of social functions. "I guess around middle school is when kids started to care about what others thought," she said, but "this school, this year has been a relief." Trey\'s future coach at Ball State, James Whitford, said he felt great about the prom-posal, noting that Trey, whom he\'s known for a long time, often works with other kids . Trey\'s mother, Shelly Moses, was also proud of her son. "It\'s exciting to bring awareness to a good cause," she said. "Trey has worked pretty hard, and he\'s a good son." Both Trey and Ellie have a lot of planning to do. Trey is looking to take up special education as a college major, in addition to playing basketball in the fall. As for Ellie, she can\'t stop thinking about prom. "Ellie can\'t wait to go dress shopping" her mother said. "Because I\'ve only told about a million people!" Ellie interjected.'
+
+
+lenpen: float = 2.0  # length penalty
+min_len: int = 55
+max_len_a: int = 0
+max_len_b: int = 140
+no_repeat_ngram_size: int = 3
+extractive_penalty_fct = get_extractive_penalty_fct('none')
+
+with torch.random.fork_rng():
+    torch.manual_seed(42)
+    torch.cuda.manual_seed_all(42)  # if you are using multi-GPU.
+
+    # tau = 0.1
+    dict_parameters = dict(
+        lenpen=lenpen,
+        sampling=True,
+        min_len=min_len, 
+        max_len_a=max_len_a, 
+        max_len_b=max_len_b,
+        temperature=0.1,
+        no_repeat_ngram_size=no_repeat_ngram_size,
+        extractive_penalty_fct=extractive_penalty_fct)
+
+
+    tensor_input_ids = bart_model.encode(document_input)
+    tensor_stack = torch.stack([tensor_input_ids]).to(bart_model.device)
+    generated_ids_01 = bart_model.generate(tensor_stack, **dict_parameters)
+    text_summary_generate_method_01: str = bart_model.decode(generated_ids_01[0]['tokens'])
+
+    # tau = 0.5
+    dict_parameters_05 = dict(
+        lenpen=lenpen,
+        sampling=True,
+        min_len=min_len, 
+        max_len_a=max_len_a, 
+        max_len_b=max_len_b,
+        temperature=0.5,
+        no_repeat_ngram_size=no_repeat_ngram_size,
+        extractive_penalty_fct=extractive_penalty_fct)
+
+
+    tensor_input_ids = bart_model.encode(document_input)
+    tensor_stack = torch.stack([tensor_input_ids]).to(bart_model.device)
+    generated_ids_05 = bart_model.generate(tensor_stack, **dict_parameters_05)
+    text_summary_generate_method_05: str = bart_model.decode(generated_ids_05[0]['tokens'])
+
+    assert text_summary_generate_method_01 != text_summary_generate_method_05
+
+
+# %%
 
 def test_compatible_methods_generate_and_sample(testresources: Path):
     # using the generate method
