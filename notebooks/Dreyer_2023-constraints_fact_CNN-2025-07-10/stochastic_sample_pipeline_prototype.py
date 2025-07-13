@@ -7,7 +7,7 @@ from summary_abstractive.module_model_handler.ver2 import (
     FaiseqTranslationModelHandlerVer2WordEmbeddings, 
     TranslationResultContainer,
     EvaluationTargetTranslationPair)
-
+from summary_abstractive.exceptions import ParameterSettingException
 import json
 import numpy as np
 
@@ -141,12 +141,14 @@ for _unique_id, _obj in dict_unique_id2records.items():
     logger.info('=' * 30)
     logger.info(f"document-id = {_document_unique_id}")
     for _tau in tau_parameters:
-        summary_model_handler.translate_sample_multiple_times(
-            input_text=_input_record,
-            n_sampling=n_sampling,
-            temperature=_tau,
-            penalty_command=_penalty_command
-        )
-        logger.info(f"done tau={_tau}")
-
+        try:
+            summary_model_handler.translate_sample_multiple_times(
+                input_text=_input_record,
+                n_sampling=n_sampling,
+                temperature=_tau,
+                penalty_command=_penalty_command
+            )
+            logger.info(f"done tau={_tau}")
+        except ParameterSettingException:
+            logger.error(f"Error at tau={_tau} and `ParameterSettingException`")
 
