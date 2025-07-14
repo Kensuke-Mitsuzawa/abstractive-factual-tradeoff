@@ -3,6 +3,7 @@ import torch
 import logging
 import tempfile
 import random
+import copy
 from pathlib import Path
 
 import zlib
@@ -272,7 +273,10 @@ class FaiseqTranslationModelHandlerVer2WordEmbeddings(BaseTranslationModelHandle
                 
                 generated_obj = self.bart_model.generate(_tensor_token_id_cuda, **dict_parameters)
             # end with
-            seq_stack_sampling.append([dict_parameters, generated_obj])
+
+            _dict_parameters_cached = copy.deepcopy(dict_parameters)
+            _dict_parameters_cached['random_seed'] = seq_random_seed_values[i_iteration]
+            seq_stack_sampling.append([_dict_parameters_cached, generated_obj])
             i_iteration += 1
         # end with
 
@@ -386,7 +390,9 @@ class FaiseqTranslationModelHandlerVer2WordEmbeddings(BaseTranslationModelHandle
                     continue
                 # end if
             else:
-                output_stack.append([dict_parameters, generated_obj])
+                _dict_parameters_cached = copy.deepcopy(dict_parameters)
+                _dict_parameters_cached['random_seed'] = seq_random_seed_values[i_sampling]
+                output_stack.append([_dict_parameters_cached, generated_obj])
                 i_sampling += 1
             # end try
         # end while

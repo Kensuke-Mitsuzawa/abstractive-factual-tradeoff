@@ -121,11 +121,19 @@ logger.info(f"Downsampling the calibration records. {len(seq_document_unique_id_
 
 # %%
 
+# shuffling the keys
+import random
+gen_random = random.Random()
+seq_key_shuffle = list(dict_unique_id2records.keys())
+gen_random.shuffle(seq_key_shuffle)
 
-for _unique_id, _obj in dict_unique_id2records.items():
+
+for _unique_id in seq_key_shuffle:
     if (_unique_id not in seq_document_unique_id_calibration) and (_unique_id not in seq_document_unique_id_hallucination):
         continue
     # end if
+
+    _obj = dict_unique_id2records[_unique_id]
 
     _document_unique_id: str = _unique_id.to_str()
 
