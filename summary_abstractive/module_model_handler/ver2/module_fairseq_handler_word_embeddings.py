@@ -217,36 +217,97 @@ class FaiseqTranslationModelHandlerVer2WordEmbeddings(BaseTranslationModelHandle
     # Sampling
 
     def _sampling_multi_input(self,
-                              fairseq_interface: GeneratorHubInterface,
+                              source_text: str,
                               tensor_source_tokens: torch.Tensor,
+                              penalty_command: str,
                               temperature: float,
-                              n_sampling: int) -> ty.List[ty.Dict]:
-        seq_input_tensor = [tensor_source_tokens] * n_sampling
+                              n_sampling: int,
+                              min_len: int,
+                              max_len_a: float,
+                              max_len_b: int,
+                              length_penalty: float,
+                              no_repeat_ngram_size: int,
+                              batch_size: int = 5,
+                              ) -> ty.List[TranslationResultContainer]:
+        # making the random seed values from the `random_seed` parameter
+        _gen_random = random.Random(self.random_seed)
+        assert n_sampling < 10000, f"n_sampling={n_sampling} should be less than 10000."
+        seq_random_seed_values = list(range(0, 9999))
+        _gen_random.shuffle(seq_random_seed_values)
 
-        with torch.random.fork_rng():
-            if self.random_seed != -1:
-                torch.manual_seed(self.random_seed)
-                torch.cuda.manual_seed_all(self.random_seed)  # if you are using multi-GPU.
+        i_iteration = 0
+        seq_stack_sampling = []
+        while len(seq_stack_sampling) < n_sampling:
+            extractive_penalty_fct = utils.get_extractive_penalty_fct(penalty_command)
+
+            if len(seq_stack_sampling) < (n_sampling - batch_size):
+                seq_input_tensor = [tensor_source_tokens] * batch_size
             else:
-                seed = random.randint(0, 9999999 - 1)
-                torch.manual_seed(seed)
-                torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU.
+                seq_input_tensor = [tensor_source_tokens] * (n_sampling - len(seq_stack_sampling))
             # end if
 
-            translations = fairseq_interface.generate(
-                tokenized_sentences=seq_input_tensor,
-                sampling=self.is_sampling,
-                temperature=temperature,
-                sampling_topk=self.sampling_topk,
-                sampling_topp=self.sampling_topp,
+            dict_parameters = dict(
                 beam=1,
-                max_len_a=self.max_len_a,
-                max_len_b=self.max_len_b
-                )
-            output_stack = translations
+                lenpen=length_penalty,
+                sampling=True,
+                temperature=temperature,
+                min_len=min_len, 
+                max_len_a=max_len_a, 
+                max_len_b=max_len_b,
+                no_repeat_ngram_size=no_repeat_ngram_size,
+                extractive_penalty_fct=extractive_penalty_fct)
+
+            try:
+                _tensor_token_id_cuda = torch.stack(seq_input_tensor).to(self.bart_model.device)
+            except RuntimeError:
+                error_message = f'Attempting transfer the input-id tensor to cuda, failed to do. dtype(tensor_source_tokens) = {tensor_source_tokens.dtype}, tensor-shape={tensor_source_tokens.shape}, tensor={tensor_source_tokens}'
+                raise ParameterSettingException(error_message)
+            else:
+                pass
+            # end try block.
+
+            with torch.random.fork_rng():
+                torch.manual_seed(seq_random_seed_values[i_iteration])
+                torch.cuda.manual_seed_all(seq_random_seed_values[i_iteration])  # if you are using multi-GPU.
+                
+                generated_obj = self.bart_model.generate(_tensor_token_id_cuda, **dict_parameters)
+            # end with
+            seq_stack_sampling.append([dict_parameters, generated_obj])
+            i_iteration += 1
         # end with
 
-        return output_stack
+        # post-processing
+        seq_output_obj = []
+        for _index_in_batch, _t_exec_result in enumerate(seq_stack_sampling):
+            _d_argument = _t_exec_result[0]
+            _obj_translations = _t_exec_result[1]            
+
+            _n_tokens = len(_obj_translations[0]['tokens'])  # type: ignore
+            _tensor_translation = _obj_translations[0]['tokens']
+
+            # getting the word embedding            
+            _dict_layer_embeddings = {
+                self._get_decoder_word_embedding_layer_name(): module_obtain_word_embedding.obtain_word_embedding(self.bart_model, _tensor_translation).cpu()
+            }            
+    
+            _log_score = _obj_translations[0]['score'].item()
+            text_translation: str = self.bart_model.decode(_obj_translations[0]['tokens'])  # type: ignore
+
+            return_obj = TranslationResultContainer(
+                source_text=source_text,
+                translation_text=text_translation,
+                source_tensor_tokens=tensor_source_tokens.cpu(),
+                target_tensor_tokens=_obj_translations[0]['tokens'].cpu(),
+                source_language='source',
+                target_language='target',
+                log_probability_score=_log_score,
+                dict_layer_embeddings=_dict_layer_embeddings,
+                argument_translation_conditions=_d_argument
+            )
+            seq_output_obj.append(return_obj)
+        # end for
+
+        return seq_output_obj
 
     def _sampling_single_input(self,
                                source_text: str,
@@ -269,62 +330,66 @@ class FaiseqTranslationModelHandlerVer2WordEmbeddings(BaseTranslationModelHandle
         # The args object is `fairseq.dataclass.configs.GenerationConfig`.
         # The `GenerationConfig` definition is at https://github.com/facebookresearch/fairseq/blob/ecbf110e1eb43861214b05fa001eff584954f65a/fairseq/dataclass/configs.py#L810
         
+        # making the random seed values from the `random_seed` parameter
+        _gen_random = random.Random(self.random_seed)
+        assert n_sampling < 10000, f"n_sampling={n_sampling} should be less than 10000."
+        seq_random_seed_values = list(range(0, 9999))
+        _gen_random.shuffle(seq_random_seed_values)
+
         output_stack = []
         i_error_attempt = 0
-        with torch.random.fork_rng():
-            if self.random_seed != -1:
-                torch.manual_seed(self.random_seed)
-                torch.cuda.manual_seed_all(self.random_seed)  # if you are using multi-GPU.
+        i_sampling = 0
+
+        extractive_penalty_fct = utils.get_extractive_penalty_fct(penalty_command)
+
+        dict_parameters = dict(
+            beam=1,
+            lenpen=length_penalty,
+            sampling=True,
+            temperature=temperature,
+            min_len=min_len, 
+            max_len_a=max_len_a, 
+            max_len_b=max_len_b,
+            no_repeat_ngram_size=no_repeat_ngram_size,
+            extractive_penalty_fct=extractive_penalty_fct)
+
+        while len(output_stack) < n_sampling:
+            try:
+                _tensor_token_id_cuda = torch.stack([tensor_source_tokens]).to(self.bart_model.device)
+            except RuntimeError:
+                error_message = f'Attempting transfer the input-id tensor to cuda, failed to do. dtype(tensor_source_tokens) = {tensor_source_tokens.dtype}, tensor-shape={tensor_source_tokens.shape}, tensor={tensor_source_tokens}'
+                raise ParameterSettingException(error_message)
             else:
-                seed = random.randint(0, 2**32 - 1)
-                torch.manual_seed(seed)
-                torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU.
-            # end if
+                pass
+            # end try block.
 
-            extractive_penalty_fct = utils.get_extractive_penalty_fct(penalty_command)
-
-            dict_parameters = dict(
-                beam=1,
-                lenpen=length_penalty,
-                sampling=True,
-                temperature=temperature,
-                min_len=min_len, 
-                max_len_a=max_len_a, 
-                max_len_b=max_len_b,
-                no_repeat_ngram_size=no_repeat_ngram_size,
-                extractive_penalty_fct=extractive_penalty_fct)
-
-            while len(output_stack) < n_sampling:
-                try:
-                    _tensor_token_id_cuda = torch.stack([tensor_source_tokens]).to(self.bart_model.device)
-                except RuntimeError:
-                    error_message = f'Attempting transfer the input-id tensor to cuda, failed to do. dtype(tensor_source_tokens) = {tensor_source_tokens.dtype}, tensor-shape={tensor_source_tokens.shape}, tensor={tensor_source_tokens}'
+            try:
+                with torch.random.fork_rng():
+                    torch.manual_seed(seq_random_seed_values[i_sampling])
+                    torch.cuda.manual_seed_all(seq_random_seed_values[i_sampling])  # if you are using multi-GPU.
+                    
+                    generated_obj = self.bart_model.generate(_tensor_token_id_cuda, **dict_parameters)
+                # end with
+            except (AssertionError, RuntimeError) as e:
+                if i_error_attempt >= n_max_attempts:
+                    error_message = (
+                            f"Exceeded the maximum number of attempts: {n_max_attempts}",
+                            f"Exception: {e}",
+                            f"With the temperature paramater = {temperature}",
+                            f"Source Text: {_tensor_token_id_cuda}"
+                    )
+                    module_logger.error(error_message)
                     raise ParameterSettingException(error_message)
                 else:
-                    pass
-                # end try block.
-
-                try:
-                    generated_obj = self.bart_model.generate(_tensor_token_id_cuda, **dict_parameters)
-                except (AssertionError, RuntimeError) as e:
-                    if i_error_attempt >= n_max_attempts:
-                        error_message = (
-                                f"Exceeded the maximum number of attempts: {n_max_attempts}",
-                                f"Exception: {e}",
-                                f"With the temperature paramater = {temperature}",
-                                f"Source Text: {_tensor_token_id_cuda}"
-                        )
-                        module_logger.error(error_message)
-                        raise ParameterSettingException(error_message)
-                    else:
-                        i_error_attempt += 1
-                        continue
-                    # end if
-                else:
-                    output_stack.append([dict_parameters, generated_obj])
-                # end try
-            # end while
-        # end with
+                    i_error_attempt += 1
+                    i_sampling += 1
+                    continue
+                # end if
+            else:
+                output_stack.append([dict_parameters, generated_obj])
+                i_sampling += 1
+            # end try
+        # end while
 
 
         # post-processing
@@ -382,7 +447,7 @@ class FaiseqTranslationModelHandlerVer2WordEmbeddings(BaseTranslationModelHandle
                                 is_sampling_in_iteration: bool = False,
                                 is_auto_recovery_sampling: bool = True,
                                 n_max_attempts: int = 100,
-                                batch_size: int = 100,
+                                batch_size: int = 10,
                                 target_layers_extraction: ty.Optional[ty.List[str]] = None
                                 ) -> ty.List[TranslationResultContainer]:
         """Simply, I call the fairseq interface to generate translations.
@@ -398,60 +463,54 @@ class FaiseqTranslationModelHandlerVer2WordEmbeddings(BaseTranslationModelHandle
         tensor_source_tokens = tensor_source_tokens.to(torch.int64)
 
         with torch.no_grad():
-            output_stack = self._sampling_single_input(
-                source_text=source_text,
-                tensor_source_tokens=tensor_source_tokens,
-                penalty_command=penalty_command,
-                temperature=temperature,
-                n_max_attempts=n_max_attempts,
-                n_sampling=n_sampling,
-                min_len=min_len,
-                max_len_a=max_len_a,
-                max_len_b=max_len_b,
-                length_penalty=length_penalty,
-                no_repeat_ngram_size=no_repeat_ngram_size)
-
             # The block below is still in work
-            # if is_sampling_in_iteration:
-            #     output_stack = self._sampling_single_input(
-            #         source_text=source_text,
-            #         tensor_source_tokens=tensor_source_tokens,
-            #         penalty_command=penalty_command,
-            #         temperature=temperature,
-            #         n_max_attempts=n_max_attempts,
-            #         n_sampling=n_sampling,
-            #         min_len=min_len,
-            #         max_len_a=max_len_a,
-            #         max_len_b=max_len_b,
-            #         length_penalty=length_penalty,
-            #         no_repeat_ngram_size=no_repeat_ngram_size)
-            # else:
-            #     try:
-            #         output_stack = self._sampling_multi_input(
-            #             source_text=source_text,
-            #             tensor_source_tokens=tensor_source_tokens,
-            #             temperature=temperature,
-            #             n_sampling=n_sampling,
-            #             max_len_a=max_len_a,
-            #             max_len_b=max_len_b,
-            #             target_layers_extraction=target_layers_extraction,
-            #             batch_size=batch_size)
-            #     except (AssertionError, RuntimeError) as e:
-            #         if is_auto_recovery_sampling:
-            #             module_logger.warning(f"Assertion error occurred: {e}")
-            #             output_stack = self._sampling_single_input(
-            #                 source_text=source_text,
-            #                 tensor_source_tokens=tensor_source_tokens,
-            #                 temperature=temperature,
-            #                 n_max_attempts=n_max_attempts,
-            #                 n_sampling=n_sampling,
-            #                 max_len_a=max_len_a,
-            #                 max_len_b=max_len_b)
-            #         else:
-            #             raise e
-            #         # end if
-            #     # end try-except
-            # # end if
+            if is_sampling_in_iteration:
+                output_stack = self._sampling_single_input(
+                    source_text=source_text,
+                    tensor_source_tokens=tensor_source_tokens,
+                    penalty_command=penalty_command,
+                    temperature=temperature,
+                    n_max_attempts=n_max_attempts,
+                    n_sampling=n_sampling,
+                    min_len=min_len,
+                    max_len_a=max_len_a,
+                    max_len_b=max_len_b,
+                    length_penalty=length_penalty,
+                    no_repeat_ngram_size=no_repeat_ngram_size)
+            else:
+                try:
+                    output_stack = self._sampling_multi_input(
+                        source_text=source_text,
+                        tensor_source_tokens=tensor_source_tokens,
+                        penalty_command=penalty_command,
+                        temperature=temperature,
+                        n_sampling=n_sampling,
+                        min_len=min_len,
+                        max_len_a=max_len_a,
+                        max_len_b=max_len_b,
+                        length_penalty=length_penalty,
+                        no_repeat_ngram_size=no_repeat_ngram_size,
+                        batch_size=batch_size)
+                except (AssertionError, RuntimeError) as e:
+                    if is_auto_recovery_sampling:
+                        module_logger.warning(f"Assertion error occurred: {e}")
+                        output_stack = self._sampling_single_input(
+                            source_text=source_text,
+                            tensor_source_tokens=tensor_source_tokens,
+                            penalty_command=penalty_command,
+                            temperature=temperature,
+                            n_max_attempts=n_max_attempts,
+                            n_sampling=n_sampling,
+                            min_len=min_len,
+                            max_len_a=max_len_a,
+                            max_len_b=max_len_b,
+                            length_penalty=length_penalty,
+                            no_repeat_ngram_size=no_repeat_ngram_size)
+                    else:
+                        raise e
+                    # end if
+                # end try-except
+            # end if
         # end with
 
         return output_stack
@@ -559,7 +618,7 @@ class FaiseqTranslationModelHandlerVer2WordEmbeddings(BaseTranslationModelHandle
                                         length_penalty: float = module_statics.LENPEN,
                                         no_repeat_ngram_size: int = module_statics.NO_REPEAT_NGRAM_SIZE,
                                         n_max_attempts: int = 10,
-                                        batch_size: int = 100,
+                                        batch_size: int = 50,
                                         target_layers_extraction: ty.Optional[ty.List[str]] = None,
                                         is_sampling_in_iteration: bool = False,
                                         is_auto_recovery_sampling: bool = True,
