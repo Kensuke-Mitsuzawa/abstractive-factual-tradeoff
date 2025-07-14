@@ -110,7 +110,7 @@ library called `abstractive_constraints`.
 
 To install, type:
 
-    cd abstractive_constraints
+    cd package_abstractive_constraints
     pip install ./
 
 The library provides functionality to incrementally build a target

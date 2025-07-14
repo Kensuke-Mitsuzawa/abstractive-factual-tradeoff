@@ -30,7 +30,6 @@ from .module_base import (
 
 module_logger = logging.getLogger(__name__)
 
-
 class FaiseqTranslationModelHandlerVer2WordEmbeddings(BaseTranslationModelHandlerVer2):
     def __init__(self,
                  path_dir_fairseq_model: Path,
@@ -297,14 +296,23 @@ class FaiseqTranslationModelHandlerVer2WordEmbeddings(BaseTranslationModelHandle
 
             while len(output_stack) < n_sampling:
                 try:
-                    generated_obj = self.bart_model.generate(torch.stack([tensor_source_tokens]).to(self.bart_model.device), **dict_parameters)
+                    _tensor_token_id_cuda = torch.stack([tensor_source_tokens]).to(self.bart_model.device)
+                except RuntimeError:
+                    error_message = f'Attempting transfer the input-id tensor to cuda, failed to do. dtype(tensor_source_tokens) = {tensor_source_tokens.dtype}, tensor-shape={tensor_source_tokens.shape}, tensor={tensor_source_tokens}'
+                    raise ParameterSettingException(error_message)
+                else:
+                    pass
+                # end try block.
+
+                try:
+                    generated_obj = self.bart_model.generate(_tensor_token_id_cuda, **dict_parameters)
                 except (AssertionError, RuntimeError) as e:
                     if i_error_attempt >= n_max_attempts:
                         error_message = (
                                 f"Exceeded the maximum number of attempts: {n_max_attempts}",
                                 f"Exception: {e}",
                                 f"With the temperature paramater = {temperature}",
-                                f"Source Text: {tensor_source_tokens}"
+                                f"Source Text: {_tensor_token_id_cuda}"
                         )
                         module_logger.error(error_message)
                         raise ParameterSettingException(error_message)
