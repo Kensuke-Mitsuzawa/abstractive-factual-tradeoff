@@ -105,19 +105,19 @@ logger.info(f'Count Unique document -> {len(dict_unique_id2records)}')
 seq_document_unique_id_hallucination = [_unique_id for _unique_id, _obj in dict_unique_id2records.items() if sum(_obj["annotator_votes"]) == 0]
 logger.info(f"Hallucination record -> {len(seq_document_unique_id_hallucination)}")
 
-# calibration records
-seq_document_unique_id_calibration_whole = [_unique_id for _unique_id, _obj in dict_unique_id2records.items() if sum(_obj["annotator_votes"]) == 3]
-logger.info(f"Calibration record -> {len(seq_document_unique_id_calibration_whole)}")
+# correct records
+seq_document_unique_id_correct_whole = [_unique_id for _unique_id, _obj in dict_unique_id2records.items() if sum(_obj["annotator_votes"]) == 3]
+logger.info(f"Calibration record -> {len(seq_document_unique_id_correct_whole)}")
 
 
 # %% downsampling the calibration record. It's too much
 
-N_CALIBRATION_RECORD = 200
+N_CORRECT_RECORD = 50
 RANDOM_SEED = 42
 
 random_gen = random.Random(RANDOM_SEED)
-seq_document_unique_id_calibration = random_gen.sample(seq_document_unique_id_calibration_whole, k=N_CALIBRATION_RECORD)
-logger.info(f"Downsampling the calibration records. {len(seq_document_unique_id_calibration)}")
+seq_document_unique_id_correct = random_gen.sample(seq_document_unique_id_correct_whole, k=N_CORRECT_RECORD)
+logger.info(f"Downsampling the correct records. {len(seq_document_unique_id_correct)}")
 
 # %%
 
@@ -129,7 +129,7 @@ gen_random.shuffle(seq_key_shuffle)
 
 
 for _unique_id in seq_key_shuffle:
-    if (_unique_id not in seq_document_unique_id_calibration) and (_unique_id not in seq_document_unique_id_hallucination):
+    if (_unique_id not in seq_document_unique_id_correct) and (_unique_id not in seq_document_unique_id_hallucination):
         continue
     # end if
 
@@ -154,7 +154,8 @@ for _unique_id in seq_key_shuffle:
                 input_text=_input_record,
                 n_sampling=n_sampling,
                 temperature=_tau,
-                penalty_command=_penalty_command
+                penalty_command=_penalty_command,
+                is_sampling_in_iteration=True
             )
             logger.info(f"done tau={_tau}")
         except ParameterSettingException:

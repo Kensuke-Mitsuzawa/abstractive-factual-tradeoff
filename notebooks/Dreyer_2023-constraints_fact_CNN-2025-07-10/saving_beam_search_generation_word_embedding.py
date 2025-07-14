@@ -119,7 +119,7 @@ logger.info(f"Calibration record -> {len(seq_document_unique_id_calibration_whol
 
 # %% downsampling the calibration record. It's too much
 
-N_CALIBRATION_RECORD = 200
+N_CALIBRATION_RECORD = 1500
 RANDOM_SEED = 42
 
 random_gen = random.Random(RANDOM_SEED)
