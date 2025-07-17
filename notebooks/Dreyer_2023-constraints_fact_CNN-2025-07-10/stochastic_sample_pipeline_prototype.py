@@ -41,7 +41,7 @@ import logging
 from summary_abstractive import logger_module
 from datetime import datetime
 
-path_log_dir = Path("/workdir/kmitsuzawa/DATA/mitsuzaw/project_UCA/MT_MMD/flagging_dreyer_2023/Dreyer_2023-constraints_fact_CNN-2025-07-10/generations") / f'{datetime.now().isoformat()}.log'
+path_log_dir = Path("/workdir/kmitsuzawa/DATA/mitsuzaw/project_UCA/MT_MMD/flagging_dreyer_2023/Dreyer_2023-constraints_fact_CNN-2025-07-10/logs/generations") / f'{datetime.now().isoformat()}.log'
 
 logger = logging.getLogger('main')
 logger.setLevel(logging.DEBUG)
@@ -102,7 +102,7 @@ logger.info(f'Count Unique document -> {len(dict_unique_id2records)}')
 # inspecting the annotation label.
 
 # hallucination labels
-seq_document_unique_id_hallucination = [_unique_id for _unique_id, _obj in dict_unique_id2records.items() if sum(_obj["annotator_votes"]) == 0]
+seq_document_unique_id_hallucination = [_unique_id for _unique_id, _obj in dict_unique_id2records.items() if sum(_obj["annotator_votes"]) < 3]
 logger.info(f"Hallucination record -> {len(seq_document_unique_id_hallucination)}")
 
 # correct records
@@ -112,7 +112,7 @@ logger.info(f"Calibration record -> {len(seq_document_unique_id_correct_whole)}"
 
 # %% downsampling the calibration record. It's too much
 
-N_CORRECT_RECORD = 50
+N_CORRECT_RECORD = 350
 RANDOM_SEED = 42
 
 random_gen = random.Random(RANDOM_SEED)
