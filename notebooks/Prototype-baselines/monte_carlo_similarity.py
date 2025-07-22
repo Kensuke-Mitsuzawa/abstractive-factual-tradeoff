@@ -18,6 +18,10 @@ from summary_abstractive.module_model_handler.ver2 import (
     module_statics)
 from summary_abstractive.module_model_handler.ver2.module_obtain_word_embedding import obtain_word_embedding
 
+import abc
+
+from datetime import datetime
+
 import json
 import numpy as np
 
@@ -31,7 +35,101 @@ from fairseq.sequence_generator import SequenceGenerator
 import logzero
 
 
+# %% Setting the logger directory
+
+
+PATH_MC_SIM = Path("/workdir/kmitsuzawa/DATA/mitsuzaw/project_UCA/MT_MMD/flagging_dreyer_2023/Dreyer_2023-constraints_fact_CNN-Baseline-2025-07-21/logs/mc_sim")
+PATH_MC_SIM.mkdir(parents=True, exist_ok=True)
+
+_log_file_name = datetime.now().isoformat()
+
+logzero.logfile(PATH_MC_SIM / f'{_log_file_name}.log')
+
 logger = logzero.logger
+
+# %%
+
+try:
+    import nltk
+    from nltk.translate import meteor_score
+    from nltk.tokenize import word_tokenize
+except ImportError:
+    raise Exception("You have to install nltk package first.")
+# end try
+
+
+# %% class definition
+
+class UniqueDocumentId(ty.NamedTuple):
+    datasource: str  # ex. cnn_dailymail
+    document_id_original: str  # ex. 0
+    abstractiveness_constraint: str  # ex. none
+
+    def to_str(self) -> str:
+        if '/' in self.abstractiveness_constraint:
+            abstractiveness_constraint = self.abstractiveness_constraint.replace("/", "-inverse-")
+        else:
+            abstractiveness_constraint = self.abstractiveness_constraint
+        # else
+        return f'{self.datasource}-{self.document_id_original}-{abstractiveness_constraint}'
+# end class
+
+
+class MonteCarloSimilarityResult(ty.NamedTuple):
+    document_id: str
+    original_document_id: str
+    abstractiveness_constraint: str
+
+    document_source: str
+    summary_reference: str
+
+    generated_summary: ty.List[ty.Dict]
+
+    metric: str
+    similarity_score: ty.List[float]
+    avg_similarity_score: float
+
+
+
+
+class BaseMetric(abc.ABC):
+    @abc.abstractmethod
+    def __init__(self) -> None:
+        pass
+
+    @abc.abstractmethod
+    def __call__(self,
+                 reference: str,
+                 seq_hypothesis: ty.List[str]) -> ty.List[float]:
+        pass
+
+
+class MeteorMetric(BaseMetric):
+    def __init__(self) -> None:
+        # setup nltk tokenizer
+        nltk.download('punkt_tab')
+        nltk.download('wordnet')
+
+    def __call__(self,
+                 reference: str,
+                 seq_hypothesis: ty.List[str]) -> ty.List[float]:
+        """Compute METEOR over multiple MC Dropout samples."""
+        scores = []
+        for _hyp in seq_hypothesis:
+            assert isinstance(_hyp, str), f"_hyp must be a string"
+            _seq_tokens_hyp = word_tokenize(_hyp)
+            assert isinstance(_seq_tokens_hyp, list), f"_seq_tokens must be a list"
+
+            _seq_tokens_ref = word_tokenize(reference)
+            assert isinstance(_seq_tokens_ref, list), f"_seq_tokens must be a list"
+
+            # _score = meteor_score.stem_match([_seq_tokens_ref], _seq_tokens_hyp)
+            _score = meteor_score.meteor_score([_seq_tokens_ref], _seq_tokens_hyp)
+            scores.append(_score)
+        # end for
+
+        return scores
+
 
 
 # %% functions
@@ -178,10 +276,10 @@ def _run_tests():
     o of the crash. \" It is a very disturbing scene,\" says Bild's editor-in-chief."""
 
 
-    # %% set config
+    # set config
     seq_config_obj = set_config_dropout_mode(fairseq_interface=fairseq_interface)
 
-    # %% Test Section.
+    # Test Section.
     # 
     #  generating the samples without dropout
     seq_generated_without_dropout = get_dropout_samples(source_text=source_text, penalty_command='none', retain_dropout=False, num_samples=num_samples)
@@ -217,6 +315,9 @@ summary_model_handler = FaiseqTranslationModelHandlerVer2WordEmbeddings(
 )
 
 
+PATH_DIR_RESULT_OUTPUT = Path("/workdir/kmitsuzawa/DATA/mitsuzaw/project_UCA/MT_MMD/flagging_dreyer_2023/Dreyer_2023-constraints_fact_CNN-Baseline-2025-07-21/results/mc_sim/result-2025_07_22")
+PATH_DIR_RESULT_OUTPUT.mkdir(parents=True, exist_ok=True)
+
 # %%
 
 if torch.cuda.is_available():
@@ -225,10 +326,105 @@ else:
     device = torch.device('')
 # end if
 
-# %%
+# %% 
+
+metric_obj = MeteorMetric()
 
 fairseq_interface = summary_model_handler.bart_model
 fairseq_interface = fairseq_interface.to(device)
 
+# set config and dropout. Setting dropout=0.3, following Guerreiro, 2023 "Looking for a Needle in a Haystack: A Comprehensive Study of Hallucinations in Neural Machine Translation"
+seq_config_obj = set_config_dropout_mode(fairseq_interface=fairseq_interface,
+                                         dropout=0.3)
 
-_run_tests()
+
+# allocating the unique id to all records
+dict_unique_id2records = {
+    UniqueDocumentId(datasource=_obj['dataset_name'], document_id_original=_obj['document_id'], abstractiveness_constraint=_obj['abstractiveness_constraint']): _obj 
+    for _obj in seq_dataset_obj
+}
+logger.info(f'Count Unique document -> {len(dict_unique_id2records)}')
+
+
+# Test function
+# _run_tests()
+
+path_dir_generated_torch_files = PATH_DIR_RESULT_OUTPUT / "generated_torch"
+path_dir_generated_torch_files.mkdir(parents=True, exist_ok=True)
+
+
+path_quick_result = PATH_DIR_RESULT_OUTPUT / "mc_sim.jsonl"
+result_f_obj = path_quick_result.open('w')
+
+# %% dropout configuration file
+path_configuration_settings = PATH_DIR_RESULT_OUTPUT / "dropout_configuration.json"
+with  path_configuration_settings.open('w') as f:
+    f.write(json.dumps(seq_config_obj, indent=4))
+# end with
+
+
+# %% main loop
+
+for _unique_id, _record in dict_unique_id2records.items():
+    _path_output_result = path_dir_generated_torch_files / f"{_unique_id.to_str()}.pt"
+    
+    if _path_output_result.exists():
+        _obj_generated_result = torch.load(_path_output_result)
+        
+        _doc_id = _obj_generated_result['document_id']
+        _avg_score = _obj_generated_result['avg_similarity_score']
+
+        result_f_obj.write(json.dumps(dict(doc_id=_doc_id, avg_score=_avg_score)) + '\n')
+        result_f_obj.flush()
+    else:
+        logger.info(f"Processing document-id {_unique_id}...")
+
+        _document_unique_id: str = _unique_id.to_str()
+
+        _document_id_original: str = _record["document_id"]
+
+        _document_full: str = _record['document_full']
+        _document_original: str = _record['document_original']
+        _summary_raw: str = _record['summary_raw']
+        
+        _penalty_command: str = _record['abstractiveness_constraint']
+        
+        assert _document_full == _document_original
+
+        _monte_carlo_generated_obj = get_dropout_samples(
+            source_text=_document_original,
+            penalty_command=_penalty_command,
+            retain_dropout=True,
+            num_samples=10
+        )
+
+        # computing the Meteor similarity
+        _seq_generated_text: ty.List[str] = [_obj['source_text'] for _obj in _monte_carlo_generated_obj]
+        _seq_metrics: ty.List[float] = metric_obj(reference=_summary_raw, seq_hypothesis=_seq_generated_text)
+        _seq_metrics = [float(_score) for _score in _seq_metrics]
+        _avg_meteor_metrics = float(np.mean(_seq_metrics))
+
+
+        _similarity_result = MonteCarloSimilarityResult(
+            document_id=_document_unique_id,
+            original_document_id=_document_id_original,
+            abstractiveness_constraint=_penalty_command,
+            document_source=_document_original,
+            summary_reference=_summary_raw,
+            generated_summary=_monte_carlo_generated_obj,
+            metric=str(metric_obj.__class__),
+            similarity_score=_seq_metrics,
+            avg_similarity_score=_avg_meteor_metrics
+        )
+
+        logger.info(f"Done processing document-id {_unique_id}. Avg-Sim -> {_similarity_result.avg_similarity_score}")
+        torch.save(_similarity_result._asdict(), _path_output_result)
+
+        _doc_id = _similarity_result.document_id
+        _avg_score = _similarity_result.avg_similarity_score
+
+        result_f_obj.write(json.dumps(dict(doc_id=_doc_id, avg_score=_avg_score)) + '\n')
+        result_f_obj.flush()
+# end for
+
+result_f_obj.close()
