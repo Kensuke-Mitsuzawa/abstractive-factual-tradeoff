@@ -1,7 +1,19 @@
+"""A script to make the word embedding vector of the generated summary sentences.
+The generated word embeddings DO NOT consider the word order.
+The generated word embedding vectors are saved in the tensor (N_tokens, N-Dims).
+
+This script compute the log probability of the generated token sequences and save it.
+"""
+
 # %%
+import torch
 from pathlib import Path
 import typing as ty
 import random
+
+import fairseq
+from fairseq.sequence_scorer import SequenceScorer
+from fairseq.data.data_utils import collate_tokens
 
 from summary_abstractive.module_model_handler.ver2 import module_statics
 from summary_abstractive.module_model_handler.ver2 import utils
@@ -9,7 +21,8 @@ from summary_abstractive.module_model_handler.ver2 import utils
 from summary_abstractive.module_model_handler.ver2 import (
     TranslationResultContainer,
     EvaluationTargetTranslationPair,
-    FaiseqTranslationModelHandlerVer2WordEmbeddings)
+    FaiseqTranslationModelHandlerVer2WordEmbeddings,
+    module_statics)
 from summary_abstractive.module_model_handler.ver2.module_obtain_word_embedding import obtain_word_embedding
 
 import json
@@ -109,7 +122,7 @@ logger.info(f'Count Unique document -> {len(dict_unique_id2records)}')
 # inspecting the annotation label.
 
 # hallucination labels
-seq_document_unique_id_hallucination = [_unique_id for _unique_id, _obj in dict_unique_id2records.items() if sum(_obj["annotator_votes"]) == 0]
+seq_document_unique_id_hallucination = [_unique_id for _unique_id, _obj in dict_unique_id2records.items() if sum(_obj["annotator_votes"]) < 3]
 logger.info(f"Hallucination record -> {len(seq_document_unique_id_hallucination)}")
 
 # calibration records
@@ -119,12 +132,63 @@ logger.info(f"Calibration record -> {len(seq_document_unique_id_calibration_whol
 
 # %% downsampling the calibration record. It's too much
 
-N_CALIBRATION_RECORD = 1500
+N_CALIBRATION_RECORD = len(seq_document_unique_id_calibration_whole)
 RANDOM_SEED = 42
 
 random_gen = random.Random(RANDOM_SEED)
 seq_document_unique_id_calibration = random_gen.sample(seq_document_unique_id_calibration_whole, k=N_CALIBRATION_RECORD)
 logger.info(f"Downsampling the calibration records. {len(seq_document_unique_id_calibration)}")
+
+
+# %% section: executing the generation and obtaining the log-probability score of the generated token sequence.
+
+
+def get_log_probability(summary_model_handler: FaiseqTranslationModelHandlerVer2WordEmbeddings,
+                        tensor_source_tokens: torch.Tensor,
+                        tensor_target_tokens: torch.Tensor
+                        ) -> torch.Tensor:
+    """A function to get the log-probability. The `SequenceScorer` can compute a log probability by the teacher forcing mode.
+    That is described in https://github.com/facebookresearch/fairseq/issues/2091#issuecomment-624419205 
+
+    Args:
+        tensor_source_tokens: (N-batch, N-tokens)
+    """
+    assert len(tensor_source_tokens) == 1
+    assert len(tensor_source_tokens) == len(tensor_target_tokens)
+
+    scorer = SequenceScorer(summary_model_handler.bart_model.task.target_dictionary)
+
+    # 2. Build the input sample dict
+    # Prepare prev_output_tokens = <BOS> + target[:-1]
+    if tensor_target_tokens[0][0].item() != 0:
+        prev_output_tokens = torch.cat([
+            torch.LongTensor([summary_model_handler.bart_model.task.source_dictionary.bos()]).to(summary_model_handler.bart_model.device), 
+            tensor_target_tokens[0][:-1]])
+    else:
+        prev_output_tokens = tensor_target_tokens[0]
+    # end if
+
+    sample = {
+        'net_input': {
+            'src_tokens': tensor_source_tokens,
+            'src_lengths': torch.LongTensor([tensor_source_tokens.numel()]),
+            "prev_output_tokens": prev_output_tokens.unsqueeze(0)
+        },
+        'target': tensor_target_tokens
+    }
+
+    # 3. Score the sample
+    models = [summary_model_handler.bart_model.model]
+    scored_output = scorer.generate(models, sample)
+    
+    assert len(scored_output) == 1
+    __example = scored_output[0]
+    assert __example[0]['score'] == __example[0]['positional_scores'].mean()
+    _log_prob: torch.Tensor = __example[0]['positional_scores']
+
+    return _log_prob
+# end def
+
 
 # %%
 
@@ -153,6 +217,42 @@ for _unique_id, _obj in dict_unique_id2records.items():
     _tensor_token_ids_document_source = summary_model_handler.bart_model.encode(_document_full)
     _tensor_token_ids_summary = summary_model_handler.bart_model.encode(_summary_raw)
 
+    # -----------------------------------------------
+    # TODO: procedure of re-generating the token sequence. Have to move into an independent function.
+    __tensor_source_tokens = _tensor_token_ids_document_source.unsqueeze(0).to(summary_model_handler.bart_model.device)
+    __tensor_target_tokens = _tensor_token_ids_summary.unsqueeze(0).to(summary_model_handler.bart_model.device)
+
+    extractive_penalty_fct = utils.get_extractive_penalty_fct(_penalty_command)
+
+    # dict_parameters = dict(
+    #     beam=module_statics.BEAM,
+    #     lenpen=module_statics.LENPEN,
+    #     sampling=False,
+    #     min_len=module_statics.MIN_LEN, 
+    #     max_len_a=module_statics.MAX_LEN_A, 
+    #     max_len_b=module_statics.MAX_LEN_B,
+    #     no_repeat_ngram_size=module_statics.NO_REPEAT_NGRAM_SIZE,
+    #     extractive_penalty_fct=extractive_penalty_fct,
+    #     temperature=1.0)
+
+    # with torch.no_grad():
+    #     _hypotheses = summary_model_handler.bart_model.generate(
+    #         __tensor_source_tokens,
+    #         target_tokens=__tensor_target_tokens,
+    #         **dict_parameters
+    #     )
+
+    with torch.no_grad():
+        _tensor_log_prob = get_log_probability(
+            summary_model_handler=summary_model_handler,
+            tensor_source_tokens=__tensor_source_tokens,
+            tensor_target_tokens=__tensor_target_tokens
+        )
+    _avg_log_prob = _tensor_log_prob.mean()
+    assert _avg_log_prob.item() < 0.0, f'The avg(log probability) must be the negative value. Obtained Value -> {_avg_log_prob}'
+
+    # -----------------------------------------------    
+
     _tensor_beam_word_embedding = obtain_word_embedding(summary_model_handler.bart_model, _tensor_token_ids_summary)
 
     extractive_penalty_fct: str = utils.get_extractive_penalty_fct(_unique_id.abstractiveness_constraint)
@@ -173,7 +273,7 @@ for _unique_id, _obj in dict_unique_id2records.items():
         target_language='target',
         source_tensor_tokens=_tensor_token_ids_document_source.cpu(),
         target_tensor_tokens=_tensor_token_ids_summary.cpu(),
-        log_probability_score=None,
+        log_probability_score=_avg_log_prob.item(),
         dict_layer_embeddings={summary_model_handler._get_decoder_word_embedding_layer_name(): _tensor_beam_word_embedding.cpu()},
         argument_translation_conditions=argument_translation_conditions
     )
